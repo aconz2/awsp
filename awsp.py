@@ -63,7 +63,7 @@ def get_profile_env(config, profile):
 
     return ret
 
-if __name__ == '__main__':
+def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('profile')
@@ -75,7 +75,9 @@ if __name__ == '__main__':
     env = os.environ.copy()
     env['AWS_PROFILE'] = args.profile
 
-    creds = get_profile_env(config, args.profile)
-    env.update()
+    env.update(get_profile_env(config, args.profile))
 
     os.execvpe(args.rest[0], args.rest, env)
+
+if __name__ == '__main__':
+    main()

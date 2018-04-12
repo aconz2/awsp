@@ -6,6 +6,7 @@ from pathlib import Path
 import boto3
 import getpass
 import sys
+from datetime import datetime
 
 def load_config(path='~/.aws/config'):
     parser = configparser.ConfigParser()
@@ -28,6 +29,21 @@ def get_session_token(session, mfa_serial):
         )
     return res['Credentials']
 
+def assume_role(session, role, mfa_serial=None):
+    rest = {}
+    if mfa_serial:
+        token_code = get_token_code()
+        rest.update(
+            SerialNumber=mfa_serial,
+            TokenCode=token_code,
+            )
+    res = session.client('sts').assume_role(
+        RoleArn=role,
+        RoleSessionName='{}-{}'.format(os.environ['USER'], datetime.utcnow().timestamp()),
+        **rest
+        )
+    return res['Credentials']
+
 def to_env(creds):
     return {
         'AWS_ACCESS_KEY_ID':     creds['AccessKeyId'],
@@ -44,18 +60,11 @@ def get_profile_env(config, profile):
         assert 'role_arn' in section
 
         print('Using source profile `{}`'.format(section['source_profile']))
-        source_section = config[section_name(section['source_profile'])]
         session = boto3.Session(profile_name=section['source_profile'])
 
-        if 'mfa_serial' in source_section:
-            ret.update(to_env(get_session_token(session, source_section['mfa_serial'])))
-
-        else:
-            print('I don\'t know how this works yet b/c you would never get the temp creds from the source profile')
-            sys.exit(1)
-
-        # NOTE: we don't do an sts.assume_role here b/c then we have to wait for two tokens
-        #       and the regular aws cli does a pretty good job of
+        # TODO: if source_profile mfa_serial is different than current profile, do we have to do
+        #       a get_session_token then an assume role??
+        ret.update(to_env(assume_role(session, section['role_arn'], section.get('mfa_serial'))))
 
     elif 'mfa_serial' in section:
         session = boto3.Session(profile_name=profile)

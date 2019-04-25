@@ -79,7 +79,7 @@ def main():
     parser.add_argument('rest', nargs='*', default=('bash', '--noprofile'))
     args = parser.parse_args()
 
-    config = load_config()
+    config = load_config(os.getenv('AWS_CONFIG_FILE', '~/.aws/config'))
 
     env = os.environ.copy()
     env['AWS_PROFILE'] = args.profile

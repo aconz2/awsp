@@ -21,18 +21,18 @@ def section_name(profile):
 def get_token_code():
     return getpass.getpass('Enter your MFA token: ')
 
-def get_session_token(session, mfa_serial):
-    token_code = get_token_code()
+def get_session_token(session, mfa_serial, mfa_code=None):
+    token_code = mfa_code or get_token_code()
     res = session.client('sts').get_session_token(
         SerialNumber=mfa_serial,
         TokenCode=token_code
         )
     return res['Credentials']
 
-def assume_role(session, role, mfa_serial=None):
+def assume_role(session, role, mfa_serial=None, mfa_code=None):
     rest = {}
     if mfa_serial:
-        token_code = get_token_code()
+        token_code = mfa_code or get_token_code()
         rest.update(
             SerialNumber=mfa_serial,
             TokenCode=token_code,
@@ -51,7 +51,7 @@ def to_env(creds):
         'AWS_SESSION_TOKEN':     creds['SessionToken'],
         }
 
-def get_profile_env(config, profile):
+def get_profile_env(config, profile, mfa_code=None):
     section = config[section_name(profile)]
 
     ret = {'AWS_PROFILE': profile}
@@ -76,29 +76,44 @@ def get_profile_env(config, profile):
 
         # TODO: if source_profile mfa_serial is different than current profile, do we have to do
         #       a get_session_token then an assume role??
-        ret.update(to_env(assume_role(session, section['role_arn'], mfa_serial)))
+        ret.update(to_env(assume_role(session, section['role_arn'], mfa_serial, mfa_code)))
 
     elif 'mfa_serial' in section:
         session = boto3.Session(profile_name=profile)
-        ret.update(to_env(get_session_token(session, section['mfa_serial'])))
+        ret.update(to_env(get_session_token(session, section['mfa_serial'], mfa_code)))
 
     return ret
+
+def to_elisp_env(kv):
+    k, v = kv
+    return f'(setenv "{k}" "{v}")'
+
+def to_shell_env(kv):
+    k, v = kv
+    return f'{k}="{v}"'
 
 def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('profile')
     parser.add_argument('rest', nargs='*', default=('bash', '--noprofile'))
+    parser.add_argument('--elisp', default=False, action='store_true')
+    parser.add_argument('--shell', default=False, action='store_true')
+    parser.add_argument('--code', default=None, required=False)
     args = parser.parse_args()
 
     config = load_config(os.getenv('AWS_CONFIG_FILE', '~/.aws/config'))
 
-    env = os.environ.copy()
-    env['AWS_PROFILE'] = args.profile
+    info = get_profile_env(config, args.profile, args.code)
 
-    env.update(get_profile_env(config, args.profile))
-
-    os.execvpe(args.rest[0], args.rest, env)
+    if args.elisp:
+        print('(progn {})'.format('\n'.join(map(to_elisp_env, info.items()))))
+    elif args.shell:
+        print('\n'.join(map(to_shell_env, info.items())))
+    else:
+        env = os.environ.copy()
+        env.update(info)
+        os.execvpe(args.rest[0], args.rest, env)
 
 if __name__ == '__main__':
     main()

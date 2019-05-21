@@ -8,7 +8,7 @@ import getpass
 import sys
 from datetime import datetime
 
-def load_config(path='~/.aws/config'):
+def load_config(path):
     parser = configparser.ConfigParser()
     f = Path(path).expanduser().resolve()
     assert f.is_file()
@@ -62,9 +62,21 @@ def get_profile_env(config, profile):
         print('Using source profile `{}`'.format(section['source_profile']))
         session = boto3.Session(profile_name=section['source_profile'])
 
+        source_section = config[section_name(section['source_profile'])]
+        if 'mfa_serial' in section and 'mfa_serial' in section:
+            print('Got mfa_serial in both {} and {}'.format(profile, section['source_profile']))
+            sys.exit(1)
+
+        if 'mfa_serial' in source_section:
+            mfa_serial = source_section['mfa_serial']
+        elif 'mfa_serial' in section:
+            mfa_serial = source_section['mfa_serial']
+        else:
+            mfa_serial = None
+
         # TODO: if source_profile mfa_serial is different than current profile, do we have to do
         #       a get_session_token then an assume role??
-        ret.update(to_env(assume_role(session, section['role_arn'], section.get('mfa_serial'))))
+        ret.update(to_env(assume_role(session, section['role_arn'], mfa_serial)))
 
     elif 'mfa_serial' in section:
         session = boto3.Session(profile_name=profile)
